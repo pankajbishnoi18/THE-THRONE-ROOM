@@ -1,79 +1,162 @@
 from typing import Annotated
 from typing_extensions import TypedDict
-from langgraph.graph.message import add_messages
-from tools import chain,retrieve_info
+from langgraph.graph.message import add_messages,RemoveMessage
+from operator import add
+from tools import breaker_chain,retrieve_info,researcher_chain,hand_chain
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt import tools_condition
 from langgraph.graph import StateGraph, START, END
-from langchain_core.messages import AIMessage
-from prompts import prompt
+from langchain_core.messages import HumanMessage, ToolMessage
+
+import json
 
 
 class LordHandState(TypedDict):
     situation: str
-    opinions: list
+    
     messages: Annotated[list, add_messages]
 
-def lord_hand_node(state:LordHandState):
-    response=chain.invoke(
-        {   "situation":state["situation"],
-            "opinions":state["opinions"],
-            "messages":state["messages"]})
+    research_notes:Annotated[list,add]
+    subqueries:list[str]
+    current_query:str
+    current_query_index:int
+    done:bool
+    final_answer:str
+
+def breaker_node(state:LordHandState):
+    resp=breaker_chain.invoke({
+    "situation":state["situation"]
+   })
+    
+    if resp.content[0]!="[" or resp.content[-1]!="]":
+        return {"subqueries":"breaker failed to provide query in specific format"}
+    queries=json.loads(resp.content)
+    
     return {
-            "messages":[response]
+        "subqueries":queries,
+        "current_query":queries[0],
+        "current_query_index":0,
+        "done":False
+    }
+
+
+
+def researcher_node(state: LordHandState):
+
+    response = researcher_chain.invoke({
+        "situation":state["situation"],
+        "query": state["current_query"],
+        "messages": state["messages"]
+    })
+
+    update = {
+        "messages": [response]
+    }
+
+    # If the model is requesting a tool, don't save anything yet.
+    if response.tool_calls:
+        return update
+
+    # Only save the final answer.
+    update["research_notes"] = [
+        {
+            "query": state["current_query"],
+            "answer": response.content
+        }
+    ]
+
+    return update
+
+tool_node = ToolNode([retrieve_info])
+
+def controller_node(state: LordHandState):
+    idx = state["current_query_index"] + 1
+    clear_messages = [RemoveMessage(id=m.id) for m in state["messages"]]
+
+    if idx >= len(state["subqueries"]):
+        return {
+            "done": True,
+            "messages": clear_messages
         }
 
+    return {
+        "done": False,
+        "messages": clear_messages,
+        "current_query_index": idx,
+        "current_query": state["subqueries"][idx]
+    }
 
-tool_node=ToolNode([retrieve_info])
+def route(state: LordHandState):
+    if state["done"]:
+        return "lord_hand"
 
-graph=StateGraph(LordHandState)
-graph.add_node("lord_hand",lord_hand_node)
-graph.add_node("tools",tool_node)
+    return "researcher"
+   
 
-graph.add_edge(START,"lord_hand")
+def lord_hand_node(state:LordHandState):
+    notes_text = "\n\n".join(
+        f"Q: {n['query']}\nA: {n['answer']}" for n in state["research_notes"]
+    )
+    response=hand_chain.invoke(
+        {   "situation":state["situation"],
+            
+            "research_notes":notes_text
+
+            })
+    return {
+            "final_answer":response.content
+        }
+
+graph = StateGraph(LordHandState)
+
+graph.add_node("breaker", breaker_node)
+graph.add_node("researcher", researcher_node)
+graph.add_node("tools", tool_node)
+graph.add_node("controller", controller_node)
+graph.add_node("lord_hand", lord_hand_node)
+
+graph.add_edge(START, "breaker")
+graph.add_edge("breaker", "researcher")
+
 graph.add_conditional_edges(
-    "lord_hand",
+    "researcher",
     tools_condition,
-    {"tools":"tools",
-    END:END}
-)
-graph.add_edge("tools","lord_hand")
-app=graph.compile()
-from langchain_core.messages import AIMessage
-
-# opinions = [
-#     AIMessage(
-#         name="Lord Commander",
-#         content=(
-#             "We should send the army to collect the taxes. "
-#             "This will demonstrate the consequences of refusing to pay tribute."
-#         )
-#     ),
-#     AIMessage(
-#         name="Master of Coin",
-#         content=(
-#             "My King, we cannot afford a war with Ashvale. "
-#             "The treasury is already under considerable strain."
-#         )
-#     ),
-# ]
-opinions=(
-    """
-    lord_commander:We should send the army to collect the taxes. This will demonstrate the consequences of refusing to pay tribute.
-    master of coin:My King, we cannot afford a war with Ashvale. The treasury is already under considerable strain.
-    """
-)
-result = app.invoke(
     {
-        "situation": """
-Ashvale has refused to pay tax from the last 2 years 
-""",
-        "opinions": opinions,
-        "messages": []
-    
-})
-final_message=result["messages"][-1].content
-print(final_message)
-print("_________________")
-print(result)
+        "tools": "tools",
+        END: "controller",
+    },
+)
 
+graph.add_edge("tools", "researcher")
+
+
+graph.add_conditional_edges(
+    "controller",
+    route,
+    {
+        "researcher": "researcher",
+        "lord_hand": "lord_hand",
+    },
+)
+
+graph.add_edge("lord_hand", END)
+app = graph.compile()
+
+
+situation={
+    "situation": """
+
+For the past ten days, merchant caravans traveling between Ashvale and Crownhaven have reported repeated attacks near Eagle's Crossing. Although the attackers stole only grain wagons, no merchants were killed, suggesting the raids were carefully planned rather than acts of random banditry.
+
+As a result, several merchants have postponed shipments until the route is declared safe. Grain prices in Crownhaven have risen modestly, while warehouses in Ashvale are beginning to accumulate unsold stock.
+
+The Governor of Ashvale has requested additional patrols along the King's Road. Meanwhile, the Governor of Riverwatch argues that repairing a damaged bridge on the River Road would restore an alternative supply route more quickly than deploying soldiers.
+
+
+"""
+}
+
+response=app.invoke({
+    "situation":situation
+})
+print(response)

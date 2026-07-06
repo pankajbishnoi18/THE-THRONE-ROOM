@@ -1,38 +1,28 @@
 from langchain_core.tools import tool
-from function import read_file,retrieve
+from RAG_implementation import read_file,retrieve
 from pathlib import Path
 from langchain_ollama import ChatOllama
-from prompts import prompt
+from prompts import breaker_prompt,research_prompt,hand_prompt
 
 
 @tool
-def retrieve_info(query:str):
+def retrieve_info(situation:str,query:str):
     """
-Search the Royal Archives for information relevant to the current situation.
-
-Use this tool whenever historical records, governance procedures,
-political precedents, diplomatic information,
-administrative rules or succession laws are required.
-
-Input:
-A natural language description of the information you need.
-
-Output:
-The most relevant archival documents.
+Search the Royal Archives for information relevant to the current query.
 """
-    content=retrieve(query)
-    if not content:
-        return f"Search status:NO_MATCH,Content:{content},Reason:there are no relevent docs"
+    content=retrieve(situation,query) 
 
-    return f"Search status:MATCH_FOUND,Content:{content}"
+    if content=="empty" :
+        return "empty"
+    if len(content)==1:
+        return f"content1:{content[0]}"
+    return f"content1:{content[0]},\ncontent2:{content[1]}"
+
+
 tools=[retrieve_info]
-llm=ChatOllama(model="llama3.2:3b",temperature=0.2)
+
+llm=ChatOllama(model="llama3.2:3b",temperature=0.0)
 llm_tool=llm.bind_tools(tools)
-chain=prompt | llm_tool
-
-
-
-
-
-        
-
+researcher_chain=research_prompt | llm_tool
+breaker_chain=breaker_prompt | llm
+hand_chain=hand_prompt | llm 
