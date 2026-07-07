@@ -166,4 +166,3 @@ def compress_and_convert_into_one(response):
         merged_documents.append(" ".join(merged_words))
 
     return merged_documents
-

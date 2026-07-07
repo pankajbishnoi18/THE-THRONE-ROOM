@@ -2,7 +2,7 @@ from typing import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages,RemoveMessage
 from operator import add
-from tools import breaker_chain,retrieve_info,researcher_chain,hand_chain,situation
+from tools import breaker_chain,retrieve_info,researcher_chain,law_chain,situation
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt import tools_condition
 from langgraph.graph import StateGraph, START, END
@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 import json
 
 
-class LordHandState(TypedDict):
+class MasterLawState(TypedDict):
     situation: str
     
     messages: Annotated[list, add_messages]
@@ -23,7 +23,7 @@ class LordHandState(TypedDict):
     done:bool
     final_answer:str
 
-def breaker_node(state:LordHandState):
+def breaker_node(state:MasterLawState):
     resp=breaker_chain.invoke({
     "situation":state["situation"]
    })
@@ -31,6 +31,7 @@ def breaker_node(state:LordHandState):
     if resp.content[0]!="[" or resp.content[-1]!="]":
         raise ValueError(
         f"Breaker did not return a JSON array.\n\nOutput:\n{resp.content}")
+    queries=json.loads(resp.content)
     
     return {
         "subqueries":queries,
@@ -41,7 +42,7 @@ def breaker_node(state:LordHandState):
 
 
 
-def researcher_node(state: LordHandState):
+def researcher_node(state: MasterLawState):
 
     response = researcher_chain.invoke({
         "situation":state["situation"],
@@ -53,9 +54,11 @@ def researcher_node(state: LordHandState):
         "messages": [response]
     }
 
+
     if response.tool_calls:
         return update
 
+    
     update["research_notes"] = [
         {
             "query": state["current_query"],
@@ -67,7 +70,7 @@ def researcher_node(state: LordHandState):
 
 tool_node = ToolNode([retrieve_info])
 
-def controller_node(state: LordHandState):
+def controller_node(state: MasterLawState):
     idx = state["current_query_index"] + 1
     clear_messages = [RemoveMessage(id=m.id) for m in state["messages"]]
 
@@ -84,18 +87,18 @@ def controller_node(state: LordHandState):
         "current_query": state["subqueries"][idx]
     }
 
-def route(state: LordHandState):
+def route(state: MasterLawState):
     if state["done"]:
-        return "lord_hand"
+        return "master_of_law"
 
     return "researcher"
    
 
-def lord_hand_node(state:LordHandState):
+def master_of_law_node(state:MasterLawState):
     notes_text = "\n\n".join(
         f"Q: {n['query']}\nA: {n['answer']}" for n in state["research_notes"]
     )
-    response=hand_chain.invoke(
+    response=law_chain.invoke(
         {   "situation":state["situation"],
             
             "research_notes":notes_text
@@ -105,13 +108,13 @@ def lord_hand_node(state:LordHandState):
             "final_answer":response.content
         }
 
-graph = StateGraph(LordHandState)
+graph = StateGraph(MasterLawState)
 
 graph.add_node("breaker", breaker_node)
 graph.add_node("researcher", researcher_node)
 graph.add_node("tools", tool_node)
 graph.add_node("controller", controller_node)
-graph.add_node("lord_hand", lord_hand_node)
+graph.add_node("master_of_law", master_of_law_node)
 
 graph.add_edge(START, "breaker")
 graph.add_edge("breaker", "researcher")
@@ -133,17 +136,17 @@ graph.add_conditional_edges(
     route,
     {
         "researcher": "researcher",
-        "lord_hand": "lord_hand",
+        "master_of_law": "master_of_law",
     },
 )
 
-graph.add_edge("lord_hand", END)
+graph.add_edge("master_of_law", END)
 app = graph.compile()
 
 
 
-
-response=app.invoke({
-    "situation":situation
-})
-print(response)
+response=app.invoke(
+    situation,
+    config={"recursion_limit": 60}
+)
+print(response["final_answer"])

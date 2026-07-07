@@ -2,7 +2,8 @@ from langchain_core.tools import tool
 from RAG_implementation import read_file,retrieve
 from pathlib import Path
 from langchain_ollama import ChatOllama
-from prompts import breaker_prompt,research_prompt,hand_prompt
+from prompts import breaker_prompt,research_prompt,law_prompt
+
 
 situation={
     "situation": """
@@ -16,6 +17,7 @@ The Governor of Ashvale has requested additional patrols along the King's Road. 
 
 """
 }
+
 @tool
 def retrieve_info(search_question: str):
     """
@@ -48,4 +50,8 @@ llm=ChatOllama(model="llama3.2:3b",temperature=0.0)
 llm_tool=llm.bind_tools(tools)
 researcher_chain=research_prompt | llm_tool
 breaker_chain=breaker_prompt | llm
-hand_chain=hand_prompt | llm 
+law_chain=law_prompt | llm 
+
+
+
+

@@ -124,7 +124,7 @@ def fixed_size_chunk(text:str,chunk_size:int=500,overlap:int=400):
 def chunk_maker():
     chunks=[]
     path1=Path.cwd()/"lore2"/"common"
-    path2=Path.cwd()/"lore2"/"lord_of_whispers"
+    path2=Path.cwd()/"lore2"/"lord_commander"
     for file in path1.iterdir():
         chunks.append(read_file(file))
     for file in path2.iterdir():
@@ -166,4 +166,3 @@ def compress_and_convert_into_one(response):
         merged_documents.append(" ".join(merged_words))
 
     return merged_documents
-
