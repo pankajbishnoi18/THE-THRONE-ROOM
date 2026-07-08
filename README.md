@@ -148,7 +148,7 @@ Each advisor folder is structurally identical — only the prompts and the `lore
 | Orchestration          | LangGraph `0.3.24`                          |
 | LLM Framework          | LangChain `0.3.19` / LangChain Core `0.3.40` |
 | LLM Runtime            | [Ollama](https://ollama.com) (local)         |
-| LLM Model              | `llama3.2:3b` (temperature `0.0`)            |
+| LLM Model              | `llama3.2:3b` (temperature `0.0`) or you can use llama3(bigger model) |
 | Embedding Model        | `BAAI/bge-small-en-v1.5` via `sentence-transformers 3.0.1` |
 | Similarity Metric      | Cosine similarity (NumPy)                    |
 | JSON Repair            | `json_repair 0.61.2` (for parsing breaker output) |
