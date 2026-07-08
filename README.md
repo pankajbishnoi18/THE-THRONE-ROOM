@@ -162,6 +162,10 @@ Other notable installed packages (see full environment for complete list): `lang
    ```bash
    ollama pull llama3.2:3b
    ```
+   If your device supports bigger model then please use-
+   ```bash
+   ollama pull llama3
+   ```
 
 2. **Clone the repo and set up a virtual environment (Python 3.11):**
    ```bash
