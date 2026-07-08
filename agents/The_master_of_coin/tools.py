@@ -1,36 +1,31 @@
 from langchain_core.tools import tool
-from RAG_implementation import read_file,retrieve
+from .RAG_implementation import read_file,retrieve
 from pathlib import Path
 from langchain_ollama import ChatOllama
-from prompts import breaker_prompt,research_prompt,coin_prompt
+from .prompts import breaker_prompt,research_prompt,coin_prompt
 
 
-situation={
-    "situation": """
-
-For the past ten days, merchant caravans traveling between Ashvale and Crownhaven have reported repeated attacks near Eagle's Crossing. Although the attackers stole only grain wagons, no merchants were killed, suggesting the raids were carefully planned rather than acts of random banditry.
-
-As a result, several merchants have postponed shipments until the route is declared safe. Grain prices in Crownhaven have risen modestly, while warehouses in Ashvale are beginning to accumulate unsold stock.
-
-The Governor of Ashvale has requested additional patrols along the King's Road. Meanwhile, the Governor of Riverwatch argues that repairing a damaged bridge on the River Road would restore an alternative supply route more quickly than deploying soldiers.
+situation=""
+def get_situation(s):
+    global situation
+    situation=s
+    return situation
 
 
-"""
-}
 
 @tool
 def retrieve_info(search_question: str):
     """
-    Search the Royal Archives.
-
+    Search the Royal Archives and
     search_question MUST be the COMPLETE research question.
     Do not shorten, summarize, or convert it into keywords.
     Pass the entire question exactly as written.
     """
     
     try:
-        print(search_question)
-        content=retrieve(situation["situation"],search_question)
+        
+        
+        content=retrieve(situation,search_question)
     except Exception as e:
         print("ERROR:", type(e).__name__)
         print(e)

@@ -2,12 +2,12 @@ from typing import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages,RemoveMessage
 from operator import add
-from tools import breaker_chain,retrieve_info,researcher_chain,whisper_chain,situation
+from .tools import breaker_chain,retrieve_info,researcher_chain,whisper_chain,get_situation
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt import tools_condition
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage, ToolMessage
-
+from json_repair import repair_json
 import json
 
 
@@ -28,11 +28,10 @@ def breaker_node(state:LordWhisperState):
     "situation":state["situation"]
    })
     
-    if resp.content[0]!="[" or resp.content[-1]!="]":
-        raise ValueError(
-        f"Breaker did not return a JSON array.\n\nOutput:\n{resp.content}")
-    queries=json.loads(resp.content)
-    
+    queries = repair_json(resp.content, return_objects=True)
+
+    if not isinstance(queries, list):
+        raise ValueError(f"Breaker failed to return a list.\nReturned: {queries}")
     return {
         "subqueries":queries,
         "current_query":queries[0],
@@ -44,33 +43,30 @@ def breaker_node(state:LordWhisperState):
 
 def researcher_node(state: LordWhisperState):
     
-    already_has_tool_result = any(
-        isinstance(msg, ToolMessage)
-        for msg in state["messages"]
-    )
-
-    
     response = researcher_chain.invoke({
-        "messages": state["messages"],
-        "query": state["current_query"]
+        "situation":state["situation"],
+        "query": state["current_query"],
+        "messages": state["messages"]
     })
 
-   
-    if response.tool_calls and not already_has_tool_result:
-        return {
-            "messages": [response]
-        }
+    update = {
+        "messages": [response]
+    }
+
+
+    if response.tool_calls:
+        return update
 
     
-    return {
-        "messages": [response],
-        "research_notes": [
-            {
-                "query": state["current_query"],
-                "answer": response.content
-            }
-        ]
-    }
+    update["research_notes"] = [
+        {
+            "query": state["current_query"],
+            "answer": response.content
+        }
+    ]
+
+    return update
+
 
 tool_node = ToolNode([retrieve_info])
 
@@ -149,8 +145,10 @@ app = graph.compile()
 
 
 
-response=app.invoke(
-    situation,
-    config={"recursion_limit": 60}
-)
-print(response["final_answer"])
+def report(situation:str):
+    s=get_situation(situation)
+    advice=app.invoke({
+        "situation":situation
+    },
+    config={"recursion_limit": 60})
+    return advice

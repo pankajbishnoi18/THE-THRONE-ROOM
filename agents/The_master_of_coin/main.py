@@ -2,11 +2,12 @@ from typing import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages,RemoveMessage
 from operator import add
-from tools import breaker_chain,retrieve_info,researcher_chain,coin_chain,situation
+from .tools import breaker_chain,retrieve_info,researcher_chain,coin_chain,get_situation
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt import tools_condition
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage, ToolMessage
+from json_repair import repair_json
 
 import json
 
@@ -23,23 +24,21 @@ class MasterCoinState(TypedDict):
     done:bool
     final_answer:str
 
-def breaker_node(state:MasterCoinState):
-    
-    resp=breaker_chain.invoke({
-    "situation":state["situation"]
-   })
-    
-    if resp.content[0]!="[" or resp.content[-1]!="]":
-         raise ValueError(
-        f"Breaker did not return a JSON array.\n\nOutput:\n{resp.content}"
-    )
-    queries=json.loads(resp.content)
-    
+def breaker_node(state: MasterCoinState):
+    resp = breaker_chain.invoke({
+        "situation": state["situation"]
+    })
+
+    queries = repair_json(resp.content, return_objects=True)
+
+    if not isinstance(queries, list):
+        raise ValueError(f"Breaker failed to return a list.\nReturned: {queries}")
+
     return {
-        "subqueries":queries,
-        "current_query":queries[0],
-        "current_query_index":0,
-        "done":False
+        "subqueries": queries,
+        "current_query": queries[0],
+        "current_query_index": 0,
+        "done": False
     }
 
 
@@ -52,6 +51,8 @@ def researcher_node(state: MasterCoinState):
         "messages": state["messages"]
     })
     
+
+   
     update = {
         "messages": [response]
     }
@@ -147,8 +148,10 @@ app = graph.compile()
 
 
 
-response=app.invoke(
-    situation,
-    config={"recursion_limit": 60}
-)
-print(response["final_answer"])
+def report(situation:str):
+    s=get_situation(situation)
+    advice=app.invoke({
+        "situation":situation
+    },
+    config={"recursion_limit": 60})
+    return advice

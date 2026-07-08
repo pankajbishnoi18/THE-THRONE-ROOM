@@ -1,11 +1,12 @@
 from langchain_core.tools import tool
-from RAG_implementation import read_file,retrieve
+from .RAG_implementation import read_file,retrieve
 from pathlib import Path
 from langchain_ollama import ChatOllama
-from prompts import breaker_prompt,research_prompt,commander_prompt
+from .prompts import breaker_prompt,research_prompt,commander_prompt
 
-situation=None
+situation=""
 def get_situation(s):
+    global situation
     situation=s
     return situation
 
@@ -20,8 +21,8 @@ def retrieve_info(search_question: str):
     """
     
     try:
-        print(search_question)
-        content=retrieve(situation["situation"],search_question)
+        
+        content=retrieve(situation,search_question)
     except Exception as e:
         print("ERROR:", type(e).__name__)
         print(e)

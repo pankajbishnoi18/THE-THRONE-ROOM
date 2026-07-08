@@ -2,11 +2,12 @@ from typing import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages,RemoveMessage
 from operator import add
-from tools import breaker_chain,retrieve_info,researcher_chain,commander_chain,situation,get_situation
+from .tools import breaker_chain,retrieve_info,researcher_chain,commander_chain,get_situation
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt import tools_condition
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage, ToolMessage
+from json_repair import repair_json
 
 import json
 
@@ -23,21 +24,21 @@ class LordCommanderState(TypedDict):
     done:bool
     final_answer:str
 
-def breaker_node(state:LordCommanderState):
-    resp=breaker_chain.invoke({
-    "situation":state["situation"]
-   })
-    
-    if resp.content[0]!="[" or resp.content[-1]!="]":
-        raise ValueError(
-        f"Breaker did not return a JSON array.\n\nOutput:\n{resp.content}")
-    queries=json.loads(resp.content)
-    
+def breaker_node(state: LordCommanderState):
+    resp = breaker_chain.invoke({
+        "situation": state["situation"]
+    })
+
+    queries = repair_json(resp.content, return_objects=True)
+
+    if not isinstance(queries, list):
+        raise ValueError(f"Breaker failed to return a list.\nReturned: {queries}")
+
     return {
-        "subqueries":queries,
-        "current_query":queries[0],
-        "current_query_index":0,
-        "done":False
+        "subqueries": queries,
+        "current_query": queries[0],
+        "current_query_index": 0,
+        "done": False
     }
 
 
@@ -145,21 +146,10 @@ graph.add_edge("lord_commander", END)
 app = graph.compile()
 
 
-situation={
-    "situation": """
-
-For the past ten days, merchant caravans traveling between Ashvale and Crownhaven have reported repeated attacks near Eagle's Crossing. Although the attackers stole only grain wagons, no merchants were killed, suggesting the raids were carefully planned rather than acts of random banditry.
-
-As a result, several merchants have postponed shipments until the route is declared safe. Grain prices in Crownhaven have risen modestly, while warehouses in Ashvale are beginning to accumulate unsold stock.
-
-The Governor of Ashvale has requested additional patrols along the King's Road. Meanwhile, the Governor of Riverwatch argues that repairing a damaged bridge on the River Road would restore an alternative supply route more quickly than deploying soldiers.
-
-
-"""
-}
-situation=get_situation(situation)
-response=app.invoke(
-    situation,
-    config={"recursion_limit": 60}
-)
-print(response["final_answer"])
+def report(situation:str):
+    s=get_situation(situation)
+    advice=app.invoke({
+        "situation":situation
+    },
+    config={"recursion_limit": 60})
+    return advice
